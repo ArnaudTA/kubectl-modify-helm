@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -11,7 +14,6 @@ import (
 	"github.com/rajatjindal/kubectl-modify-secret/pkg/secrets"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v2"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 
@@ -120,7 +122,22 @@ func (o *ModifySecretOptions) Run() error {
 
 	data := make(map[string]string, len(secret.Data))
 	for k, v := range secret.Data {
-		data[k] = string(v)
+		decodedSecretLevel1, err := base64.StdEncoding.DecodeString(string(v))
+		if err != nil {
+			return fmt.Errorf("erreur lors du premier décodage base64 : %v", err)
+		}
+		r, err := gzip.NewReader(bytes.NewReader(decodedSecretLevel1))
+		if err != nil {
+			return fmt.Errorf("erreur lors de la création du lecteur gzip : %v", err)
+		}
+		defer r.Close()
+
+		decompressedSecret, err := ioutil.ReadAll(r)
+		if err != nil {
+			return fmt.Errorf("erreur lors de la décompression gzip : %v", err)
+		}
+		data[k] = string(decompressedSecret)
+
 	}
 
 	tempfile, err := os.CreateTemp("", fmt.Sprintf("%s-%s-*.yaml", o.namespace, o.secretName))
@@ -129,17 +146,16 @@ func (o *ModifySecretOptions) Run() error {
 	}
 	defer os.Remove(tempfile.Name())
 
-	yamlData, err := yamlOrEmpty(data)
+	release, ok := data["release"]
+	if !ok {
+		return fmt.Errorf("no .release")
+	}
+	err = os.WriteFile(tempfile.Name(), []byte(release), 0644)
 	if err != nil {
 		return err
 	}
 
-	err = os.WriteFile(tempfile.Name(), yamlData, 0644)
-	if err != nil {
-		return err
-	}
-
-	originalSum := md5.Sum(yamlData)
+	originalSum := md5.Sum([]byte(release))
 
 	err = editor.Edit(tempfile.Name())
 	if err != nil {
@@ -159,15 +175,28 @@ func (o *ModifySecretOptions) Run() error {
 	}
 
 	var updateData map[string]string
-	err = yaml.Unmarshal(readData, &updateData)
-	if err != nil {
-		return err
-	}
 
 	updateByteData := make(map[string][]byte, len(updateData))
-	for k, v := range updateData {
-		updateByteData[k] = []byte(v)
+	// 1. Compression gzip
+	var buf bytes.Buffer
+	gzipWriter := gzip.NewWriter(&buf)
+
+	_, err = gzipWriter.Write(readData)
+	if err != nil {
+		return fmt.Errorf("erreur lors de la compression gzip : %v", err)
 	}
+
+	err = gzipWriter.Close()
+	if err != nil {
+		return fmt.Errorf("erreur lors de la fermeture du writer gzip : %v", err)
+	}
+
+	compressedData := buf.Bytes()
+
+	// 2. Premier encodage base64
+	encodedSecretLevel1 := base64.StdEncoding.EncodeToString(compressedData)
+
+	updateByteData["release"] = []byte(encodedSecretLevel1)
 
 	secret.Data = updateByteData
 
@@ -179,16 +208,6 @@ func (o *ModifySecretOptions) Run() error {
 	logrus.Infof("secret %q edited", o.secretName)
 
 	return nil
-}
-
-// yamlOrEmpty renders a map to a YAML, with the exception that an empty map
-// becomes an empty byte slice instead of []byte(`{}`)
-func yamlOrEmpty(data map[string]string) ([]byte, error) {
-	if len(data) == 0 {
-		return []byte{}, nil
-	}
-
-	return yaml.Marshal(data)
 }
 
 // getNamespace takes a set of kubectl flag values and returns the namespace we should be operating in

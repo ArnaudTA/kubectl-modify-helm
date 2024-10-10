@@ -35,7 +35,7 @@ func getCommandAndArgs(editorFromEnv, file string) (string, []string) {
 	carray := strings.Fields(editorFromEnv)
 	command := carray[0]
 	if len(carray) > 1 {
-		var args = append(carray[1:len(carray)], file)
+		var args = append(carray[1:], file)
 		return command, args
 	}
 
