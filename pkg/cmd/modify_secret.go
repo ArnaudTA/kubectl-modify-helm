@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -120,7 +123,22 @@ func (o *ModifySecretOptions) Run() error {
 
 	data := make(map[string]string, len(secret.Data))
 	for k, v := range secret.Data {
-		data[k] = string(v)
+		decodedSecretLevel1, err := base64.StdEncoding.DecodeString(string(v))
+		if err != nil {
+			return fmt.Errorf("erreur lors du premier décodage base64 : %v", err)
+		}
+		r, err := gzip.NewReader(bytes.NewReader(decodedSecretLevel1))
+		if err != nil {
+			return fmt.Errorf("erreur lors de la création du lecteur gzip : %v", err)
+		}
+		defer r.Close()
+
+		decompressedSecret, err := ioutil.ReadAll(r)
+		if err != nil {
+			return fmt.Errorf("erreur lors de la décompression gzip : %v", err)
+		}
+		data[k] = string(decompressedSecret)
+
 	}
 
 	tempfile, err := os.CreateTemp("", fmt.Sprintf("%s-%s-*.yaml", o.namespace, o.secretName))
@@ -166,7 +184,26 @@ func (o *ModifySecretOptions) Run() error {
 
 	updateByteData := make(map[string][]byte, len(updateData))
 	for k, v := range updateData {
-		updateByteData[k] = []byte(v)
+		// 1. Compression gzip
+		var buf bytes.Buffer
+		gzipWriter := gzip.NewWriter(&buf)
+
+		_, err = gzipWriter.Write([]byte(v))
+		if err != nil {
+			return fmt.Errorf("erreur lors de la compression gzip : %v", err)
+		}
+
+		err = gzipWriter.Close()
+		if err != nil {
+			return fmt.Errorf("erreur lors de la fermeture du writer gzip : %v", err)
+		}
+
+		compressedData := buf.Bytes()
+
+		// 2. Premier encodage base64
+		encodedSecretLevel1 := base64.StdEncoding.EncodeToString(compressedData)
+
+		updateByteData[k] = []byte(encodedSecretLevel1)
 	}
 
 	secret.Data = updateByteData
