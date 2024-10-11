@@ -11,8 +11,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/rajatjindal/kubectl-modify-secret/pkg/editor"
-	"github.com/rajatjindal/kubectl-modify-secret/pkg/secrets"
+	"github.com/ArnaudTa/kubectl-modify-release/pkg/editor"
+	"github.com/ArnaudTa/kubectl-modify-release/pkg/secrets"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"

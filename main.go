@@ -17,7 +17,7 @@ package main
 import (
 	"os"
 
-	"github.com/rajatjindal/kubectl-modify-secret/pkg/cmd"
+	"github.com/ArnaudTa/kubectl-modify-release/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
