@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -14,10 +15,10 @@ import (
 	"github.com/rajatjindal/kubectl-modify-secret/pkg/secrets"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 
-	//import all supported auth
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
@@ -137,7 +138,6 @@ func (o *ModifySecretOptions) Run() error {
 			return fmt.Errorf("erreur lors de la décompression gzip : %v", err)
 		}
 		data[k] = string(decompressedSecret)
-
 	}
 
 	tempfile, err := os.CreateTemp("", fmt.Sprintf("%s-%s-*.yaml", o.namespace, o.secretName))
@@ -150,12 +150,23 @@ func (o *ModifySecretOptions) Run() error {
 	if !ok {
 		return fmt.Errorf("no .release")
 	}
-	err = os.WriteFile(tempfile.Name(), []byte(release), 0644)
+
+	var jsonData map[string]interface{}
+	err2 := json.Unmarshal([]byte(release), &jsonData)
+	if err2 != nil {
+		panic(err2)
+	}
+
+	yamlData, err := yaml.Marshal(jsonData)
+	if err != nil {
+		panic(err)
+	}
+	err = os.WriteFile(tempfile.Name(), yamlData, 0644)
 	if err != nil {
 		return err
 	}
 
-	originalSum := md5.Sum([]byte(release))
+	originalSum := md5.Sum([]byte(yamlData))
 
 	err = editor.Edit(tempfile.Name())
 	if err != nil {
@@ -167,6 +178,18 @@ func (o *ModifySecretOptions) Run() error {
 		return err
 	}
 
+	// Décoder le YAML dans une structure Go (map[string]interface{})
+	var yamlMap map[string]interface{}
+	err3 := yaml.Unmarshal(readData, &yamlMap)
+	if err3 != nil {
+		panic(err3)
+	}
+
+	// Convertir la structure Go (yamlMap) en JSON
+	jsonData2, err4 := json.Marshal(yamlMap)
+	if err4 != nil {
+		panic(err4)
+	}
 	finalSum := md5.Sum(readData)
 
 	if originalSum == finalSum {
@@ -181,7 +204,7 @@ func (o *ModifySecretOptions) Run() error {
 	var buf bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buf)
 
-	_, err = gzipWriter.Write(readData)
+	_, err = gzipWriter.Write(jsonData2)
 	if err != nil {
 		return fmt.Errorf("erreur lors de la compression gzip : %v", err)
 	}
