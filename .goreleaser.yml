@@ -1,11 +1,11 @@
 builds:
-- id: kubectl-modify-secret
+- id: kubectl-modify-release
   main: ./
-  binary: kubectl-modify_secret
+  binary: kubectl-modify_release
   env:
   - CGO_ENABLED=0
   ldflags:
-  - "-s -w -X github.com/rajatjindal/kubectl-modify-secret/pkg/cmd.Version={{.Version}}"
+  - "-s -w -X github.com/ArnaudTA/kubectl-modify-release/pkg/cmd.Version={{.Version}}"
   goos:
   - darwin
   - linux
@@ -16,7 +16,7 @@ builds:
 
 archives:
 - builds:
-  - kubectl-modify-secret
+  - kubectl-modify-release
   name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
   wrap_in_directory: false
   format: tar.gz
